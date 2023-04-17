@@ -1,10 +1,10 @@
 # yabd
 Yet another brightness daemon
 
-This is a simple daemon that sets the brightness of the screen depending on ambient brightness.
+This is a simple (~200 lines of python) daemon that sets the brightness of the screen depending on ambient brightness.
 It was developed for my [framework](https://frame.work/) laptop on wayland / sway, but it should work with any system that 
 1. uses systemd/dbus (with systemd-logind)
-2. 
+2. has an ambient light sensor compatible with `iio-sensor-proxy`
 
 Features:
 
@@ -15,7 +15,61 @@ Features:
 
 ## Installation
 
-## Interface
+This needs `python3.10` or newer. It also needs `iio-sensor-proxy` to be installed, as well as `pygobject` and `dbus-python`
+
+### Arch linux
+
+There is a PKGBUILD in the `etc` folder. You can install it with `makepkg -si`.
+
+```console
+$cd etc
+$makepkg -si
+```
+
+
+### With Pip
+
+First install `python3.10` or newer and `iio-sensor-proxy` through your package manager. 
+
+Then use pip to install `yabd` and its python dependencies:
+
+```console
+pip install git+https://github.com/tbrugere/yabd.git
+```
+
+it will get installed in `$site-packages/yabd.py`
+
+Optionally also install the systemd service file:
+
+```console
+cp etc/yabd-installed-with-pip.service  ~/.config/systemd/user/yabd.service
+```
+
+## Usage
+
+### systemd
+
+The easiest way to use this is to use the provided systemd service file. To start the service once
+
+```console
+systemctl --user start yabd
+```
+
+To start the service on login
+
+```console
+systemctl --user enable yabd
+```
+
+To modify the options, edit the service file using 
+
+```console
+systemctl --user edit yabd
+```
+
+and modify the command line options in the `[Service]` section. The command line options are described below.
+
+### Command line
 
 ```console
 usage: yabd [-h] [--max-brightness MAX_BRIGHTNESS] [--min-brightness MIN_BRIGHTNESS]
