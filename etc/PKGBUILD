@@ -38,5 +38,5 @@ package() {
     cd "$_pkgname"
     install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE" #license
     install -D yabd.py "$pkgdir/usr/bin/yabd"
-    install -Dm644 etc/yabd.service "$pkgdir/usr/lib/systemd/system/yabd.service"
+    install -Dm644 etc/yabd.service "$pkgdir/usr/lib/systemd/user/yabd.service"
 }
