@@ -1,6 +1,5 @@
-
 [Unit]
-Description=Brightness daemon
+Description=Yet Another Brightness Daemon
 PartOf=graphical-session.target
 
 [Service]
