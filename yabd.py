@@ -17,7 +17,7 @@ class Daemon(dbus.service.Object):
     controllable = True #whether to respond to dbus calls
     device = "intel_backlight"
     subsystem = "backlight"
-    min_selectable_brightness = 5. # do not set the brightness lower than that (in percent)
+    min_selectable_brightness = 1. # do not set the brightness lower than that (in percent)
     max_selectable_brightness = 100. # do not set the brightness higher than that (same)
     max_ambient_brightness = 500.
     ambient_brightness_change_to_get_control_back = 100. # in lumen
