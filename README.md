@@ -22,8 +22,8 @@ This needs `python3.10` or newer. It also needs `iio-sensor-proxy` to be install
 There is a PKGBUILD in the `etc` folder. You can install it with `makepkg -si`.
 
 ```console
-$cd etc
-$makepkg -si
+$ cd etc
+$ makepkg -si
 ```
 
 
@@ -34,7 +34,7 @@ First install `python3.10` or newer and `iio-sensor-proxy` through your package 
 Then use pip to install `yabd` and its python dependencies:
 
 ```console
-pip install git+https://github.com/tbrugere/yabd.git
+$ pip install git+https://github.com/tbrugere/yabd.git
 ```
 
 it will get installed in `$site-packages/yabd.py`
@@ -42,7 +42,7 @@ it will get installed in `$site-packages/yabd.py`
 Optionally also install the systemd service file:
 
 ```console
-cp etc/yabd-installed-with-pip.service  ~/.config/systemd/user/yabd.service
+$ cp etc/yabd-installed-with-pip.service  ~/.config/systemd/user/yabd.service
 ```
 
 ## Usage
@@ -52,19 +52,19 @@ cp etc/yabd-installed-with-pip.service  ~/.config/systemd/user/yabd.service
 The easiest way to use this is to use the provided systemd service file. To start the service once
 
 ```console
-systemctl --user start yabd
+$ systemctl --user start yabd
 ```
 
 To start the service on login
 
 ```console
-systemctl --user enable yabd
+$ systemctl --user enable yabd
 ```
 
 To modify the options, edit the service file using 
 
 ```console
-systemctl --user edit yabd
+$ systemctl --user edit yabd
 ```
 
 and modify the command line options in the `[Service]` section. The command line options are described below.
@@ -72,6 +72,7 @@ and modify the command line options in the `[Service]` section. The command line
 ### Command line
 
 ```console
+$ yabd --help
 usage: yabd [-h] [--max-brightness MAX_BRIGHTNESS] [--min-brightness MIN_BRIGHTNESS]
             [--max-ambient-brightness MAX_AMBIENT_BRIGHTNESS] [--device DEVICE]
             [--subsystem SUBSYSTEM]
