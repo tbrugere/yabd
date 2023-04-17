@@ -101,3 +101,22 @@ options:
   --ramp, --no-ramp     ramp brightness changes (default True) (default: True)
   -v, --verbose         enable logging
 ```
+
+### Dimming the screen
+
+Dimming / undimming the screen can be done with via `re.bruge.yabd` dbus interface.
+
+```console
+$ gdbus call --session -d re.bruge.yabd -o /re/bruge/yabd -m re.bruge.yabd.dim
+$ gdbus call --session -d re.bruge.yabd -o /re/bruge/yabd -m re.bruge.yabd.undim
+```
+
+For example, here is my `swayidle` config:
+
+```console
+timeout 200 'gdbus call --session -d re.bruge.yabd -o /re/bruge/yabd -m re.bruge.yabd.dim' resume 'gdbus call --session -d re.bruge.yabd -o /re/bruge/yabd -m re.bruge.yabd.undim'
+timeout 300 'swaymsg "output * dpms off"' resume 'swaymsg "output * dpms on"'
+timeout 600 swaylock resume 'swaymsg "output * dpms on"'
+before-sleep swaylock
+lock swaylock
+```
