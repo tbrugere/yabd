@@ -86,7 +86,7 @@ class Daemon(dbus.service.Object):
         screen_brightness = self.query_brightness()
         if not self.has_control and self.should_take_control_back(light_level):
             self.has_control = True
-            self.ambient_brightness_change_to_get_control_back = None
+            self.ambient_brightness_when_lost_control= None
             self.known_brightness = None
         elif self.known_brightness is None:
             self.known_brightness = screen_brightness
@@ -147,6 +147,8 @@ class Daemon(dbus.service.Object):
 
     def should_take_control_back(self, brightness_level):
         assert self.ambient_brightness_when_lost_control is not None
+        if self.ambient_brightness_change_to_get_control_back == 0:
+            return False
         return abs(brightness_level - self.ambient_brightness_when_lost_control) > self.ambient_brightness_change_to_get_control_back
 
     def query_brightness(self):
@@ -183,7 +185,7 @@ class Daemon(dbus.service.Object):
                             help=f"ambient brightness (in lumen) corresponding to the max (default: {cls.max_ambient_brightness})", default=cls.max_ambient_brightness)
         parser.add_argument("--device", type=str, help=f"device to control (default {cls.device})", default=cls.device)
         parser.add_argument("--subsystem", type=str, help=f"subsystem to control (default {cls.subsystem})", default=cls.subsystem)
-        parser.add_argument("--change-to-get-control-back", type=float, help=f"how much the ambient brightness has to change to get control back (default {cls.ambient_brightness_change_to_get_control_back})", default=cls.ambient_brightness_change_to_get_control_back)
+        parser.add_argument("--change-to-get-control-back", type=float, help=f"how much the ambient brightness has to change to get control back (default {cls.ambient_brightness_change_to_get_control_back} lumen). If the screen brightness is changed by another application, this daemon stops controlling it temporarily. but if the ambient brightness changes more than this amount, it takes control back. set to 0 to disable this behaviour", default=cls.ambient_brightness_change_to_get_control_back)
         parser.add_argument("--ramp", action=argparse.BooleanOptionalAction, help=f"ramp brightness changes (default {cls.ramp})", default=cls.ramp)
         parser.add_argument("-v", "--verbose", 
                             action="store_const", 
@@ -199,6 +201,7 @@ class Daemon(dbus.service.Object):
         self.max_selectable_brightness = args.max_brightness
         self.min_selectable_brightness = args.min_brightness
         self.max_ambient_brightness = args.max_ambient_brightness
+        self.ambient_brightness_change_to_get_control_back = args.change_to_get_control_back
         self.device = args.device
         self.subsystem = args.subsystem
         logging.basicConfig(level=args.loglevel)
