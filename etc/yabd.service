@@ -6,7 +6,7 @@ PartOf=graphical-session.target
 [Service]
 Type=dbus
 BusName=re.bruge.yabd
-ExecStart=%h/bin/yabd.py
+ExecStart=/usr/bin/yabd
 
 [Install]
 WantedBy=graphical-session.target
