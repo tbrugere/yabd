@@ -1,0 +1,12 @@
+
+[Unit]
+Description=Brightness daemon
+PartOf=graphical-session.target
+
+[Service]
+Type=dbus
+BusName=re.bruge.yabd
+ExecStart=/usr/bin/python -m yabd
+
+[Install]
+WantedBy=graphical-session.target
