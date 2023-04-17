@@ -1,0 +1,17 @@
+[tool.poetry]
+name = "yabd"
+version = "0.1.0"
+description = "Yet Another Brightness Daemon"
+authors = ["Tristan Brugère <67050900+tbrugere@users.noreply.github.com>"]
+license = "Cecill-B"
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.10"
+dbus-python = "^1.3.2"
+PyGObject = "^3.44.1"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
