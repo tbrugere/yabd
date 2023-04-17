@@ -186,6 +186,7 @@ class Daemon(dbus.service.Object):
         parser.add_argument("--device", type=str, help=f"device to control (default {cls.device})", default=cls.device)
         parser.add_argument("--subsystem", type=str, help=f"subsystem to control (default {cls.subsystem})", default=cls.subsystem)
         parser.add_argument("--change-to-get-control-back", type=float, help=f"how much the ambient brightness has to change to get control back (default {cls.ambient_brightness_change_to_get_control_back} lumen). If the screen brightness is changed by another application, this daemon stops controlling it temporarily. but if the ambient brightness changes more than this amount, it takes control back. set to 0 to disable this behaviour", default=cls.ambient_brightness_change_to_get_control_back)
+        parser.add_argument("--controllable", action=argparse.BooleanOptionalAction, help=f"whether to respond to dbus commands (dim and undim) (default {cls.controllable})", default=cls.controllable)
         parser.add_argument("--ramp", action=argparse.BooleanOptionalAction, help=f"ramp brightness changes (default {cls.ramp})", default=cls.ramp)
         parser.add_argument("-v", "--verbose", 
                             action="store_const", 
@@ -203,6 +204,7 @@ class Daemon(dbus.service.Object):
         self.max_ambient_brightness = args.max_ambient_brightness
         self.ambient_brightness_change_to_get_control_back = args.change_to_get_control_back
         self.device = args.device
+        self.controllable = args.controllable
         self.subsystem = args.subsystem
         logging.basicConfig(level=args.loglevel)
 
