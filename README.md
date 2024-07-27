@@ -163,8 +163,8 @@ $ yabd set_multiplier 100 # set the multiplier back to 100%. prints the new mult
 ##### Example sway config
 
 ```swayconfig
-bindsym XF86MonBrightnessUp exec "brightnessctl s 10%+"
-bindsym XF86MonBrightnessDown exec "brightnessctl s 10%-"
+bindsym XF86MonBrightnessUp exec "yabd change_multiplier +10"
+bindsym XF86MonBrightnessDown exec "yabd change_multiplier -10"
 ```
 
 #### Dimming the screen
