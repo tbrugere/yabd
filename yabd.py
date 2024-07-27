@@ -1,16 +1,15 @@
 #!/bin/env python
 
-from typing import Literal, Any, Never
+from typing import Never
 
 import asyncio
 import argparse
 import functools as ft
 from logging import info
 import logging
-import os
 
 import sdbus
-from sdbus import DbusInterfaceCommonAsync, dbus_method_async, dbus_signal_async, dbus_property_async
+from sdbus import DbusInterfaceCommonAsync, dbus_method_async, dbus_property_async
 
 class SensorProxy(DbusInterfaceCommonAsync, interface_name="net.hadess.SensorProxy"):
     def __init__(self, bus: sdbus.SdBus|None=None):
@@ -102,7 +101,9 @@ class Yabd(DbusInterfaceCommonAsync, interface_name="re.bruge.yabd"):
                     info(f"got PropertiesChanged signal, but without LightLevel")
 
         # register our dbus service
-        self.export_to_dbus("/re/bruge/yabd", session_bus)
+        sdbus.set_default_bus(session_bus)
+        await sdbus.request_default_bus_name_async("re.bruge.yabd")
+        self.export_to_dbus("/re/bruge/yabd", bus=session_bus)
 
         async with asyncio.TaskGroup() as tg:
             tg.create_task(brightness_changed_loop())
@@ -203,12 +204,12 @@ class Yabd(DbusInterfaceCommonAsync, interface_name="re.bruge.yabd"):
 
     async def set_multiplier_(self, multiplier, in_percent=False, relative=False):
         if in_percent: multiplier = multiplier / 100
-        multiplier = max(0, multiplier)
-        multiplier = min(2., multiplier) #max multiplier is 2.
         if relative:
             multiplier = self.multiplier + multiplier
+        multiplier = max(0, multiplier)
+        multiplier = min(5., multiplier) #max multiplier is 500%
         self.multiplier = multiplier
-        await self.set_brightness_depending_on_ambient_light(self.known_brightness)
+        await self.set_brightness_depending_on_ambient_light()
         if in_percent: return multiplier * 100
         return multiplier
 
@@ -218,30 +219,38 @@ class Yabd(DbusInterfaceCommonAsync, interface_name="re.bruge.yabd"):
     @dbus_method_async("", "b")
     async def dim(self) -> bool:
         if not self.controllable: return False
+        info("dimming")
         self.is_dim = True
-        await self.set_brightness_depending_on_ambient_light(self.known_brightness)
+        await self.set_brightness_depending_on_ambient_light()
         return True
 
     @dbus_method_async("", "b")
     async def undim(self) -> bool:
         if not self.controllable: return False
+        info("undimming")
         self.is_dim = False
-        await self.set_brightness_depending_on_ambient_light(self.known_brightness)
+        await self.set_brightness_depending_on_ambient_light()
         return True
 
     @dbus_method_async("d", "v")
-    async def change_multiplier(self, change: float) -> float:
-        if not self.controllable: return False
-        return await self.set_multiplier_(change, in_percent=True, relative=True)
+    async def change_multiplier(self, change: float) -> tuple[str, float|bool]:
+        if not self.controllable: return ("b", False)
+        info(f"changing multiplier by {change}")
+        new_multiplier = await self.set_multiplier_(change, in_percent=True, relative=True)
+        return ("d", new_multiplier)
 
     @dbus_method_async("d", "v")
-    async def set_multiplier(self, new_multiplier: float) -> float:
-        if not self.controllable: return False
-        return await self.set_multiplier_(new_multiplier, in_percent=True)
+    async def set_multiplier(self, new_multiplier: float) -> tuple[str, float|bool]:
+        if not self.controllable: return ("b", False)
+        info(f"setting multiplier to {new_multiplier}")
+        new_multiplier = await self.set_multiplier_(new_multiplier, in_percent=True)
+        return ("d", new_multiplier)
+
 
     @classmethod
-    def argument_parser(cls):
-        parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    def argument_parser(cls, parser=None):
+        if parser is None:
+            parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
         parser.add_argument("--max-brightness", type=float, help=f"max selectable brightness in percent", default=cls.max_selectable_brightness)
         parser.add_argument("--min-brightness", type=float, help=f"min selectable brightness in percent", default=cls.min_selectable_brightness)
         parser.add_argument("--dimmed-brightness", type=float, help=f"brightness when the screen is dimmed through command", default=cls.dimmed_brightness)
@@ -258,12 +267,6 @@ class Yabd(DbusInterfaceCommonAsync, interface_name="re.bruge.yabd"):
         parser.add_argument("--ramp", action=argparse.BooleanOptionalAction, help=f"ramp brightness changes", default=cls.ramp)
         parser.add_argument("--ramp-step", type=float, help=f"how much to change the brightness every 10 ms when ramping (in percent, default {cls.ramp_step})", default=cls.ramp_step)
         parser.add_argument("--gamma", type=float, help=f"gamma for power scaling. 1 means proportional. Lower values mean that as the room gets brighter, the screen gets brighter faster. Raise if the backlight is too bright in the dark.", default=cls.gamma)
-        parser.add_argument("-v", "--verbose", 
-                            action="store_const", 
-                            dest="loglevel", 
-                            const=logging.INFO,  
-                            default=logging.WARNING,
-                            help="enable logging")
         return parser
 
     def read_args(self, args=None):
@@ -282,26 +285,52 @@ class Yabd(DbusInterfaceCommonAsync, interface_name="re.bruge.yabd"):
         self.ramp = args.ramp
         self.ramp_step = args.ramp_step
         self.gamma = args.gamma
-        logging.basicConfig(level=args.loglevel)
 
+def argument_parser():
+    parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    subparsers = parser.add_subparsers(dest="command")
+    parser.add_argument("-v", "--verbose", 
+                        action="store_const", 
+                        dest="loglevel", 
+                        const=logging.INFO,  
+                        default=logging.WARNING,
+                        help="enable logging")
+    daemon_parser = subparsers.add_parser("run", help="run the daemon")
+    Yabd.argument_parser(daemon_parser)
+    subparsers.add_parser("dim", help="dim the screen")
+    subparsers.add_parser("undim", help="undim the screen")
+    change_multiplier_parser = subparsers.add_parser("change_multiplier", help="change the brightness multiplier")
+    change_multiplier_parser.add_argument("change", type=float, help="change the brightness multiplier by this amount (in percent)")
+    set_multiplier_parser = subparsers.add_parser("set_multiplier", help="set the brightness multiplier")
+    set_multiplier_parser.add_argument("new_multiplier", type=float, help="set the brightness multiplier to this value (in percent)")
+    return parser
 
-# def run_command(command, args, *,  signature=""):
-#     # get bus
-#     session_bus = dbus.SessionBus()
-#     daemon = bus.get_object('re.bruge.yabd', '/re/bruge/yabd')
-#     sensor_interface = dbus.Interface(sensor_proxy, dbus_interface='net.hadess.SensorProxy')
-#
-#     result = session_bus.call_blocking("re.bruge.yabd", 
-#             '/re/bruge/yabd', 
-#             're.bruge.yabd', 
-#             command, 
-#             signature, 
-#             args)
-#     if isinstance(result, dbus.Boolean) and not result:
-#         logging.err("Daemon is not controllable, command failed")
-#         os.exit(1)
-#         
+def run_command(command, args, *,  signature=""):
+    bus = sdbus.sd_bus_open_user()
+    daemon_proxy = Yabd.new_proxy("re.bruge.yabd", "/re/bruge/yabd", bus=bus)
+    if command == "dim":
+        result = asyncio.run(daemon_proxy.dim())
+    elif command == "undim":
+        result = asyncio.run(daemon_proxy.undim())
+    elif command == "change_multiplier":
+        _, result = asyncio.run(daemon_proxy.change_multiplier(args.change))
+    elif command == "set_multiplier":
+        _, result = asyncio.run(daemon_proxy.set_multiplier(args.new_multiplier))
+    else:
+        raise ValueError(f"unknown command {command}")
+
+    if isinstance(result, bool):
+        if result: info("success")
+        else: log.error("failed: daemon is not controllable")
+    else: print(result)
+
     
 if __name__ == "__main__":
-    daemon = Yabd(read_args=True)
-    asyncio.run(daemon.loop())
+    parser = argument_parser()
+    args = parser.parse_args()
+    logging.basicConfig(level=args.loglevel)
+    if args.command == "run":
+        daemon = Yabd(read_args=True, args=args)
+        asyncio.run(daemon.loop())
+    else:
+        run_command(args.command, args)
