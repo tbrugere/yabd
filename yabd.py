@@ -1,21 +1,41 @@
 #!/bin/env python
 
-from typing import Literal
+from typing import Literal, Any, Never
 
+import asyncio
 import argparse
 import functools as ft
 from logging import info
 import logging
 import os
 
-import dbus
-import dbus.service
-from dbus.mainloop.glib import DBusGMainLoop
-from gi.repository import GLib
+import sdbus
+from sdbus import DbusInterfaceCommonAsync, dbus_method_async, dbus_signal_async, dbus_property_async
 
-dbus_loop = DBusGMainLoop(set_as_default=True)
+class SensorProxy(DbusInterfaceCommonAsync, interface_name="net.hadess.SensorProxy"):
+    def __init__(self, bus: sdbus.SdBus|None=None):
+        super().__init__()
+        self._proxify("net.hadess.SensorProxy", "/net/hadess/SensorProxy", bus=bus)
 
-class Daemon(dbus.service.Object):
+    @dbus_method_async("", "")
+    async def claim_light(self) -> None:
+        raise NotImplementedError
+
+    @dbus_property_async("d")
+    def light_level(self) -> float:
+        raise NotImplementedError
+
+class Login1(DbusInterfaceCommonAsync, interface_name="org.freedesktop.login1.Session"):
+    def __init__(self, bus: sdbus.SdBus|None=None):
+        super().__init__()
+        self._proxify("org.freedesktop.login1", "/org/freedesktop/login1/session/auto", bus=bus)
+
+    @dbus_method_async("ssu", "")
+    async def set_brightness(self, backlight: str, device: str, brightness: int) -> None:
+        raise NotImplementedError
+
+
+class Yabd(DbusInterfaceCommonAsync, interface_name="re.bruge.yabd"):
 
     #################### OPTIONS (can be changed through command line)
     controllable = True #whether to respond to dbus calls
@@ -36,6 +56,10 @@ class Daemon(dbus.service.Object):
 
     yield_control_on_brightness_change = False #whether to yield control when the brightness is changed by another application
 
+    ##################### INTERFACES
+    login1: Login1
+    sensor_proxy: SensorProxy
+
     ##################### STATE
     multiplier= 1. # changes when user change brightness control. 
 
@@ -49,54 +73,57 @@ class Daemon(dbus.service.Object):
     #ambient brightness when we lost control of it
     ambient_brightness_when_lost_control:  float | None = None
     ramp_step_units: int # in absolute units
+    start_ramp_signal: asyncio.Event
     target_brightness: int | None = None
-    ramp_timeout_id: int | None = None
 
-    main_loop: GLib.MainLoop
-    
-    def __init__(self, main_loop: GLib.MainLoop, read_args=True):
+    def __init__(self, read_args=True, args=None):
         if read_args:
-            self.read_args()
-        self.main_loop = main_loop
+            self.read_args(args)
+        super().__init__()
         # get buses
-        bus = dbus.SystemBus()
-        session_bus = dbus.SessionBus()
-        # register our dbus service
-        our_bus_name = dbus.service.BusName("re.bruge.yabd", bus=session_bus)
-        dbus.service.Object.__init__(self, session_bus, "/re/bruge/yabd", our_bus_name)
+        bus = sdbus.sd_bus_open_system()
+        self.login1 = Login1(bus=bus)
+        self.sensor_proxy = SensorProxy(bus=bus)
 
-        # subscribe to sensor
-        sensor_proxy = bus.get_object('net.hadess.SensorProxy', '/net/hadess/SensorProxy')
-        sensor_interface = dbus.Interface(sensor_proxy, dbus_interface='net.hadess.SensorProxy')
-        sensor_interface.ClaimLight()
-        sensor_proxy.connect_to_signal("PropertiesChanged", dbus_interface="org.freedesktop.DBus.Properties", handler_function=self.brightness_changed_handler)
-
-        self.bus = bus
-        self.sensor_interface = sensor_interface
-        self.sensor_proxy = sensor_proxy
         self.ramp_step_units = int(self.ramp_step * self.max_brightness / 100)
+        self.start_ramp_signal = asyncio.Event()
 
-    def set_brightness_percent(self, brightness_percent, ramp=False):
+    async def loop(self):
+        info("starting up")
+        session_bus = sdbus.sd_bus_open_user()
+        await self.sensor_proxy.claim_light()
+        async def brightness_changed_loop() -> Never:
+            async for _, properties, __ in self.sensor_proxy.properties_changed:
+                if "LightLevel" in properties:
+                    light_level_type, light_level = properties["LightLevel"]
+                    assert light_level_type == "d"
+                    await self.brightness_changed_handler(light_level)
+                else :
+                    info(f"got PropertiesChanged signal, but without LightLevel")
+
+        # register our dbus service
+        self.export_to_dbus("/re/bruge/yabd", session_bus)
+
+        async with asyncio.TaskGroup() as tg:
+            tg.create_task(brightness_changed_loop())
+            tg.create_task(self.ramp_routine())
+
+    async def set_brightness_percent(self, brightness_percent, ramp=False):
         info(f"setting brightness to {brightness_percent}%")
         brightness = int(self.max_brightness * brightness_percent / 100)
-        self.set_brightness(brightness, ramp=ramp)
+        await self.set_brightness(brightness, ramp=ramp)
 
-    def set_brightness(self, brightness, ramp=False):
+    async def set_brightness(self, brightness, ramp=False):
         if ramp: 
             self.target_brightness = brightness
-            self.start_ramp()
+            self.start_ramp_signal.set()
             return
         self.has_control = True
         self.known_brightness = brightness
-        self.bus.call_blocking("org.freedesktop.login1", 
-                        '/org/freedesktop/login1/session/auto', 
-                        'org.freedesktop.login1.Session', 
-                        "SetBrightness", "ssu", 
-                        ( "backlight", "intel_backlight", brightness))
+        await self.login1.set_brightness(self.subsystem, self.device, brightness)
 
-    def brightness_changed_handler(self, _, args, __):
+    async def brightness_changed_handler(self, light_level):
         """Dbus signal handler for brightness changes"""
-        light_level = float(args["LightLevel"])
         screen_brightness = self.query_brightness()
         if not self.has_control and self.should_take_control_back(light_level):
             self.has_control = True
@@ -111,15 +138,13 @@ class Daemon(dbus.service.Object):
         self.known_brightness = screen_brightness
 
         if self.has_control:
-            self.set_brightness_depending_on_ambient_light()
+            await self.set_brightness_depending_on_ambient_light(light_level)
 
-    def set_brightness_depending_on_ambient_light(self, light_level=None):
+    async def set_brightness_depending_on_ambient_light(self, light_level=None):
         info(f"got {light_level=}")
         # find light level
         if light_level is None: #might happen if we call this function directly
-            light_level = float(self.sensor_proxy.Get("net.hadess.SensorProxy", 
-                                                      "LightLevel",
-                    dbus_interface="org.freedesktop.DBus.Properties"))
+            light_level = float(await self.sensor_proxy.light_level)
         light_level = min(light_level, self.max_ambient_brightness) # clip light_level to the max
         brightness_range_size = self.max_selectable_brightness - self.min_selectable_brightness
         light_level_percent = light_level / self.max_ambient_brightness
@@ -127,9 +152,10 @@ class Daemon(dbus.service.Object):
         # scale brightness depending on ambient light with a power law
         brightness_percent = self.min_selectable_brightness + \
                     brightness_range_size * light_level_percent ** self.gamma
+        info(f"brightness_percent = {self.min_selectable_brightness} + {brightness_range_size} * {light_level_percent}^{self.gamma} = {brightness_percent}")
 
         # apply user multiplier
-        brightness_percent = multiplier * brightness_percent
+        brightness_percent = self.multiplier * brightness_percent
 
         # clip brightness to the min and max
         brightness_percent = max(self.min_selectable_brightness, brightness_percent)
@@ -137,39 +163,26 @@ class Daemon(dbus.service.Object):
 
         if self.is_dim:
             brightness_percent= self.dimmed_brightness
-        self.set_brightness_percent(brightness_percent, ramp=self.ramp)
+        await self.set_brightness_percent(brightness_percent, ramp=self.ramp)
 
-    def handle_ramptimeout(self):
-        """callback for ramping brightness"""
-        current_brightness = self.query_brightness()
+    async def ramp_routine(self):
+        while True:
+            await self.start_ramp_signal.wait()
+            info("starting ramp")
+            while True:
+                if self.target_brightness is None: break
+                current_brightness = self.query_brightness()
+                if abs(current_brightness - self.target_brightness) < self.ramp_step_units:
+                    break
+                delta = self.ramp_step_units if current_brightness < self.target_brightness else -self.ramp_step_units
 
-        if self.target_brightness is None:
-            return self.stop_ramp()
-        if abs(current_brightness - self.target_brightness) < self.ramp_step_units:
-            self.set_brightness(self.target_brightness)
-            return self.stop_ramp()
-        if current_brightness < self.target_brightness:
-            self.set_brightness(current_brightness + self.ramp_step_units)
-        else:
-            self.set_brightness(current_brightness - self.ramp_step_units)
-        return True
+                await self.set_brightness(current_brightness + delta)
+                await asyncio.sleep(10e-3) # 10 ms
+            info("stopping ramp")
+            self.start_ramp_signal.clear()
+            await self.set_brightness(self.target_brightness)
+            target_brightness = None
 
-    def start_ramp(self):
-        info("starting ramp")
-        if self.ramp_timeout_id is not None: return
-        self.ramp_timeout_id = GLib.timeout_add(10, self.handle_ramptimeout)
-
-    def stop_ramp(self):
-        """`return self.stop_ramp()` in the timeout handler stops the ramp.
-        This function by itself doesnt actually stop the ramp 
-        but handles setting variables when stopping the ramp and returns False.
-        what stops the ramp is returning false from the timeout handler.
-        thus `return self.stop_ramp()` in the timeout handler stops the ramp
-        """
-        info("stopping ramp")
-        self.ramp_timeout_id = None
-        self.target_brightness = None
-        return False
 
     def should_take_control_back(self, brightness_level):
         assert self.ambient_brightness_when_lost_control is not None
@@ -188,61 +201,63 @@ class Daemon(dbus.service.Object):
                   ,"r") as f:
             return int(f.read())
 
-    def set_multiplier(self, multiplier, in_percent=False):
+    async def set_multiplier_(self, multiplier, in_percent=False, relative=False):
         if in_percent: multiplier = multiplier / 100
         multiplier = max(0, multiplier)
         multiplier = min(2., multiplier) #max multiplier is 2.
+        if relative:
+            multiplier = self.multiplier + multiplier
         self.multiplier = multiplier
-        self.set_brightness_depending_on_ambient_light()
+        await self.set_brightness_depending_on_ambient_light(self.known_brightness)
         if in_percent: return multiplier * 100
         return multiplier
 
     ##################################### DBUS METHODS. 
     # They all return False if the daemon is not controllable.
-    @dbus.service.method("re.bruge.yabd", in_signature="", out_signature="b")
-    def dim(self):
+
+    @dbus_method_async("", "b")
+    async def dim(self) -> bool:
         if not self.controllable: return False
         self.is_dim = True
-        self.set_brightness_depending_on_ambient_light()
+        await self.set_brightness_depending_on_ambient_light(self.known_brightness)
         return True
 
-    @dbus.service.method("re.bruge.yabd", in_signature="", out_signature="b")
-    def undim(self):
+    @dbus_method_async("", "b")
+    async def undim(self) -> bool:
         if not self.controllable: return False
         self.is_dim = False
-        self.set_brightness_depending_on_ambient_light(self.known_brightness)
+        await self.set_brightness_depending_on_ambient_light(self.known_brightness)
         return True
 
-    @dbus.service.method("re.bruge.yabd", in_signature="d", out_signature="v")
-    def change_multiplier(self, change: float):
-        """Returns the new multiplier value. Input is in percent."""
+    @dbus_method_async("d", "v")
+    async def change_multiplier(self, change: float) -> float:
         if not self.controllable: return False
-        return self.set_multiplier(self.multiplier + change, in_percent=True)
+        return await self.set_multiplier_(change, in_percent=True, relative=True)
 
-    @dbus.service.method("re.bruge.yabd", in_signature="d", out_signature="v")
-    def set_multiplier(self, new_multiplier: float):
-        """Returns the new multiplier value. Input is in percent."""
+    @dbus_method_async("d", "v")
+    async def set_multiplier(self, new_multiplier: float) -> float:
         if not self.controllable: return False
-        return self.set_multiplier(new_multiplier, in_percent=True)
+        return await self.set_multiplier_(new_multiplier, in_percent=True)
 
     @classmethod
     def argument_parser(cls):
-        parser = argparse.ArgumentParser()
-        parser.add_argument("--max-brightness", type=float, help=f"max selectable brightness in percent (default: {cls.max_selectable_brightness})", default=cls.max_selectable_brightness)
-        parser.add_argument("--min-brightness", type=float, help=f"min selectable brightness in percent (default: {cls.min_selectable_brightness})", default=cls.min_selectable_brightness)
+        parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+        parser.add_argument("--max-brightness", type=float, help=f"max selectable brightness in percent", default=cls.max_selectable_brightness)
+        parser.add_argument("--min-brightness", type=float, help=f"min selectable brightness in percent", default=cls.min_selectable_brightness)
+        parser.add_argument("--dimmed-brightness", type=float, help=f"brightness when the screen is dimmed through command", default=cls.dimmed_brightness)
         parser.add_argument("--max-ambient-brightness", type=float, 
-                            help=f"ambient brightness (in lumen) corresponding to the max (default: {cls.max_ambient_brightness})", default=cls.max_ambient_brightness)
-        parser.add_argument("--device", type=str, help=f"device to control (default {cls.device})", default=cls.device)
-        parser.add_argument("--subsystem", type=str, help=f"subsystem to control (default {cls.subsystem})", default=cls.subsystem)
-        parser.add_argument("--yield-control", action=argparse.BooleanOptionalAction, help=f"If this option is activated and the screen brightness is changed by another application, this daemon stops controlling it temporarily. (default {cls.controllable})", default=cls.controllable)
-        parser.add_argument("""--change-to-get-control-back", type=float, help=f"how much the ambient brightness has to change to get control back (default {cls.ambient_brightness_change_to_get_control_back} lumen). 
+                            help=f"ambient brightness (in lumen) corresponding to the max", default=cls.max_ambient_brightness)
+        parser.add_argument("--device", type=str, help=f"device to control", default=cls.device)
+        parser.add_argument("--subsystem", type=str, help=f"subsystem to control", default=cls.subsystem)
+        parser.add_argument("--yield-control", action=argparse.BooleanOptionalAction, help=f"If this option is activated and the screen brightness is changed by another application, this daemon stops controlling it temporarily.", default=cls.controllable)
+        parser.add_argument("--change-to-get-control-back", type=float, help=f"""how much the ambient brightness has to change to get control back (default {cls.ambient_brightness_change_to_get_control_back} lumen). 
     If `--yield-control` is activated and another program changes the screen brightness, the daemon stops controlling the screen brightness. 
     But if the ambient brightness changes more than this amount, it takes control back. set to 0 to disable this behaviour""", 
                             default=cls.ambient_brightness_change_to_get_control_back)
-        parser.add_argument("--controllable", action=argparse.BooleanOptionalAction, help=f"whether to respond to dbus commands (dim, undim, change_multiplier, set_multiplier) (default {cls.controllable})", default=cls.controllable)
-        parser.add_argument("--ramp", action=argparse.BooleanOptionalAction, help=f"ramp brightness changes (default {cls.ramp})", default=cls.ramp)
+        parser.add_argument("--controllable", action=argparse.BooleanOptionalAction, help=f"whether to respond to dbus commands (dim, undim, change_multiplier, set_multiplier)", default=cls.controllable)
+        parser.add_argument("--ramp", action=argparse.BooleanOptionalAction, help=f"ramp brightness changes", default=cls.ramp)
         parser.add_argument("--ramp-step", type=float, help=f"how much to change the brightness every 10 ms when ramping (in percent, default {cls.ramp_step})", default=cls.ramp_step)
-        parser.add_argument("--gamma", type=float, help=f"gamma for power scaling (default {cls.gamma}). 1 means proportional. Lower values mean that as the room gets brighter, the screen gets brighter faster. ", default=cls.gamma)
+        parser.add_argument("--gamma", type=float, help=f"gamma for power scaling. 1 means proportional. Lower values mean that as the room gets brighter, the screen gets brighter faster. Raise if the backlight is too bright in the dark.", default=cls.gamma)
         parser.add_argument("-v", "--verbose", 
                             action="store_const", 
                             dest="loglevel", 
@@ -257,12 +272,18 @@ class Daemon(dbus.service.Object):
             args = parser.parse_args()
         self.max_selectable_brightness = args.max_brightness
         self.min_selectable_brightness = args.min_brightness
+        self.dimmed_brightness = args.dimmed_brightness
         self.max_ambient_brightness = args.max_ambient_brightness
         self.ambient_brightness_change_to_get_control_back = args.change_to_get_control_back
         self.device = args.device
         self.controllable = args.controllable
         self.subsystem = args.subsystem
+        self.yield_control_on_brightness_change = args.yield_control
+        self.ramp = args.ramp
+        self.ramp_step = args.ramp_step
+        self.gamma = args.gamma
         logging.basicConfig(level=args.loglevel)
+
 
 # def run_command(command, args, *,  signature=""):
 #     # get bus
@@ -281,7 +302,6 @@ class Daemon(dbus.service.Object):
 #         os.exit(1)
 #         
     
-
-loop = GLib.MainLoop()
-daemon = Daemon(read_args=True, main_loop=loop)
-loop.run()
+if __name__ == "__main__":
+    daemon = Yabd(read_args=True)
+    asyncio.run(daemon.loop())

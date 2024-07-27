@@ -11,8 +11,7 @@ license=("custom:CeCILL-B")
 depends=(
     "python>=3.10" 
     "iio-sensor-proxy"
-    "dbus-python"
-    "python-gobject"
+    "python-sdbus"
 )
 
 makedepends=(
