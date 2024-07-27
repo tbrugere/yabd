@@ -265,7 +265,7 @@ class Yabd(DbusInterfaceCommonAsync, interface_name="re.bruge.yabd"):
                             default=cls.ambient_brightness_change_to_get_control_back)
         parser.add_argument("--controllable", action=argparse.BooleanOptionalAction, help=f"whether to respond to dbus commands (dim, undim, change_multiplier, set_multiplier)", default=cls.controllable)
         parser.add_argument("--ramp", action=argparse.BooleanOptionalAction, help=f"ramp brightness changes", default=cls.ramp)
-        parser.add_argument("--ramp-step", type=float, help=f"how much to change the brightness every 10 ms when ramping (in percent, default {cls.ramp_step})", default=cls.ramp_step)
+        parser.add_argument("--ramp-step", type=float, help=f"how much to change the brightness every 10 ms when ramping (in percent)", default=cls.ramp_step)
         parser.add_argument("--gamma", type=float, help=f"gamma for power scaling. 1 means proportional. Lower values mean that as the room gets brighter, the screen gets brighter faster. Raise if the backlight is too bright in the dark.", default=cls.gamma)
         return parser
 
@@ -295,7 +295,7 @@ def argument_parser():
                         const=logging.INFO,  
                         default=logging.WARNING,
                         help="enable logging")
-    daemon_parser = subparsers.add_parser("run", help="run the daemon")
+    daemon_parser = subparsers.add_parser("run", help="run the daemon", formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     Yabd.argument_parser(daemon_parser)
     subparsers.add_parser("dim", help="dim the screen")
     subparsers.add_parser("undim", help="undim the screen")
@@ -321,7 +321,7 @@ def run_command(command, args, *,  signature=""):
 
     if isinstance(result, bool):
         if result: info("success")
-        else: log.error("failed: daemon is not controllable")
+        else: logging.error("failed: daemon is not controllable")
     else: print(result)
 
     
