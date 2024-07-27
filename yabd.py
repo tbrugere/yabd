@@ -49,7 +49,7 @@ class Yabd(DbusInterfaceCommonAsync, interface_name="re.bruge.yabd"):
     ambient_brightness_change_to_get_control_back = 100. # in lumen
     ramp = True #whether to ramp the brightness up and down
      #vs just setting it (disabling this makes the screen look flickery)
-    ramp_step = 0.5 # in percent, how much to change brightness per 10ms when ramping. Too high a value might cause flicker
+    ramp_step = 0.2 # in percent, how much to change brightness per 10ms when ramping. Too high a value might cause flicker
 
     gamma= 2. # for power scaling
 
