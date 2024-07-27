@@ -299,9 +299,9 @@ def argument_parser():
     Yabd.argument_parser(daemon_parser)
     subparsers.add_parser("dim", help="dim the screen")
     subparsers.add_parser("undim", help="undim the screen")
-    change_multiplier_parser = subparsers.add_parser("change_multiplier", help="change the brightness multiplier")
+    change_multiplier_parser = subparsers.add_parser("change_multiplier", help="change the brightness multiplier by a relative amount")
     change_multiplier_parser.add_argument("change", type=float, help="change the brightness multiplier by this amount (in percent)")
-    set_multiplier_parser = subparsers.add_parser("set_multiplier", help="set the brightness multiplier")
+    set_multiplier_parser = subparsers.add_parser("set_multiplier", help="set the brightness multiplier to a specific value")
     set_multiplier_parser.add_argument("new_multiplier", type=float, help="set the brightness multiplier to this value (in percent)")
     return parser
 

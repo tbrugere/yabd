@@ -1,9 +1,9 @@
 # yabd
 Yet another brightness daemon
 
-This is a simple (~200 lines of python) daemon that sets the brightness of the screen depending on ambient brightness.
+This is a simple (~300 lines of python) daemon that sets the brightness of the screen depending on ambient brightness.
 It was developed for my [framework](https://frame.work/) laptop on wayland / sway, but it should work with any system that 
-1. uses systemd/dbus (with systemd-logind)
+1. uses systemd/dbus (with `systemd-logind`)
 2. has an ambient light sensor compatible with `iio-sensor-proxy`
 
 Features:
@@ -21,7 +21,10 @@ This needs `python3.10` or newer. It also needs `iio-sensor-proxy` to be install
 
 There is a PKGBUILD in the `etc` folder. You can install it with `makepkg -si`.
 
+You will first need `python-sdbus-git` from the AUR (installable with your favourite AUR manager). 
+
 ```console
+$ pikaur -S --asdeps python-sdbus-git # or your favourite AUR manager
 $ cd etc
 $ makepkg -si
 ```
@@ -71,8 +74,12 @@ and modify the command line options in the `[Service]` section. The command line
 
 ### Command line
 
+#### Running the daemon
+
+To run the daemon manually, use the `yabd run` command:
+
 ```console
-$ yabd --help
+$ yabd run --help
 usage: yabd [-h] [--max-brightness MAX_BRIGHTNESS] [--min-brightness MIN_BRIGHTNESS]
             [--max-ambient-brightness MAX_AMBIENT_BRIGHTNESS] [--device DEVICE]
             [--subsystem SUBSYSTEM]
@@ -102,21 +109,84 @@ options:
   -v, --verbose         enable logging
 ```
 
-### Dimming the screen
+#### Changing the brightness
 
-Dimming / undimming the screen can be done with via `re.bruge.yabd` dbus interface.
+
+##### By changing the brightness directly
+
+If another program changes the brightness (for example `brightnessctl`), the daemon will temporarily stop controlling the brightness. 
+
+If the ambient light changes more than a threshold (default 100 lumen), the daemon will take back control of the brightness.
+
+This behaviour is configurable and can be disabled (see `--change-to-get-control-back` and `--no-yield-control`) although 
+
+- If yielding control it is disabled, changes to the brightness may be immediately rolled back by the daemon.
+- If yielding control is enabled and the threshold is disabled, the daemon will stop doing anything if the brightness is changed by another program.
+  
+Thus for user control of the brightness, it is recommended to use the **brightness multiplier** instead (see below), or to keep the threshold to a reasonable value.
+
+##### By changing the brightness multiplier
+
+Otherwise, the user can change the brightness multiplier. This is a value that is originally equal to `100%`, and that is multiplied to every brightness value that is set by the daemon.
+
+Hence, when the user adds `10%` to the brightness multiplier, the brightness will be `10%` higher than what the daemon would have otherwise set it to.
+
+This can be done with the following commands:
+
+```console
+$ yabd change_multiplier -h
+usage: yabd change_multiplier [-h] change
+
+positional arguments:
+  change      change the brightness multiplier by this amount (in percent)
+
+options:
+  -h, --help  show this help message and exit
+$ yabd set_multiplier -h
+usage: yabd set_multiplier [-h] new_multiplier
+
+positional arguments:
+  new_multiplier  set the brightness multiplier to this value (in percent)
+
+options:
+  -h, --help      show this help message and exit
+```
+
+for example
+```console
+$ yabd change_multiplier +10 # increase the brightness by 10%. prints the new multiplier
+110.0 
+$ yabd set_multiplier 100 # set the multiplier back to 100%. prints the new multiplier
+100.0 
+```
+
+##### Example sway config
+
+```swayconfig
+bindsym XF86MonBrightnessUp exec "brightnessctl s 10%+"
+bindsym XF86MonBrightnessDown exec "brightnessctl s 10%-"
+```
+
+#### Dimming the screen
+
+This daemon allows the user to dim the screen via a remote command (via dbus). This is useful to dim the screen when the computer is idle.
+
+Dimming / undimming the screen can be done with the following commands
+
+```console
+$ yabd dim
+$ yabd undim
+```
+it could also be done by calling directly the `re.bruge.yabd` dbus interface (if you want to do it programmatically)
 
 ```console
 $ gdbus call --session -d re.bruge.yabd -o /re/bruge/yabd -m re.bruge.yabd.dim
 $ gdbus call --session -d re.bruge.yabd -o /re/bruge/yabd -m re.bruge.yabd.undim
 ```
 
-For example, here is my `swayidle` config:
+For example, here is a sample `swayidle` config:
 
 ```console
-timeout 200 'gdbus call --session -d re.bruge.yabd -o /re/bruge/yabd -m re.bruge.yabd.dim' resume 'gdbus call --session -d re.bruge.yabd -o /re/bruge/yabd -m re.bruge.yabd.undim'
+timeout 200 'yabd dim' resume 'yabd undim'
 timeout 300 'swaymsg "output * dpms off"' resume 'swaymsg "output * dpms on"'
-timeout 600 swaylock resume 'swaymsg "output * dpms on"'
-before-sleep swaylock
-lock swaylock
 ```
