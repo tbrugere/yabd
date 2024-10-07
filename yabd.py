@@ -324,8 +324,7 @@ def run_command(command, args, *,  signature=""):
         else: logging.error("failed: daemon is not controllable")
     else: print(result)
 
-    
-if __name__ == "__main__":
+def main():
     parser = argument_parser()
     args = parser.parse_args()
     logging.basicConfig(level=args.loglevel)
@@ -334,3 +333,6 @@ if __name__ == "__main__":
         asyncio.run(daemon.loop())
     else:
         run_command(args.command, args)
+    
+if __name__ == "__main__":
+    main()
