@@ -1,0 +1,50 @@
+name: build package and publish to pipy
+
+on:
+  push:
+    branches: ["main"]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v3
+        with:
+          python-version: "3.10"
+          cache: 'poetry'
+      - name: Install poetry
+        uses: abatilo/actions-poetry@v2
+      - name: Build package
+        run: poetry build
+      - name: save package
+        uses: actions/upload-artifact@v3
+        with:
+          name: dist
+          path: dist
+  publish:
+    runs-on: ubuntu-latest
+    needs: build
+    permissions:
+      id-token: write
+    environment:
+      name: pypi
+      url: https://pypi.org/p/ot_markov_distances
+    # to only publish if there is a tag release
+    # if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags')
+    steps:
+      - name: retrieve package
+        uses: actions/download-artifact@v3
+        with:
+          name: dist
+          path: dist
+      - name: list files
+        run: find
+      - name: publish package
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist
