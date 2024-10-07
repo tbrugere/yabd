@@ -37,12 +37,12 @@ First install `python3.10` or newer and `iio-sensor-proxy` through your package 
 Then use pip to install `yabd` and its python dependencies:
 
 ```console
-$ pip install git+https://github.com/tbrugere/yabd.git
+$ pip install yabd
 ```
 
 it will get installed in `$site-packages/yabd.py`
 
-Optionally also install the systemd service file:
+Optionally also install the systemd service file from this repo:
 
 ```console
 $ cp etc/yabd-installed-with-pip.service  ~/.config/systemd/user/yabd.service
