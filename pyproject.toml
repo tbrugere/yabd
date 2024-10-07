@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "yabd"
-version = "0.2.1"
+version = "0.2.2"
 description = "Yet Another Brightness Daemon"
 authors = ["Tristan Brugère <67050900+tbrugere@users.noreply.github.com>"]
 license = "Cecill-B"
