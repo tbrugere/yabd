@@ -19,16 +19,11 @@ This needs `python3.10` or newer. It also needs `iio-sensor-proxy` to be install
 
 ### Arch linux
 
-There is a PKGBUILD in the `etc` folder. You can install it with `makepkg -si`.
-
-You will first need `python-sdbus-git` from the AUR (installable with your favourite AUR manager). 
+This is available on the AUR as `yabd-git`. You can install it with your favourite AUR helper, eg:
 
 ```console
-$ pikaur -S --asdeps python-sdbus-git # or your favourite AUR manager
-$ cd etc
-$ makepkg -si
+$ pikaur -S yabd-git
 ```
-
 
 ### With Pip
 
@@ -80,33 +75,46 @@ To run the daemon manually, use the `yabd run` command:
 
 ```console
 $ yabd run --help
-usage: yabd [-h] [--max-brightness MAX_BRIGHTNESS] [--min-brightness MIN_BRIGHTNESS]
-            [--max-ambient-brightness MAX_AMBIENT_BRIGHTNESS] [--device DEVICE]
-            [--subsystem SUBSYSTEM]
-            [--change-to-get-control-back CHANGE_TO_GET_CONTROL_BACK]
-            [--ramp | --no-ramp] [-v]
+usage: yabd run [-h] [--max-brightness MAX_BRIGHTNESS] [--min-brightness MIN_BRIGHTNESS]
+                [--dimmed-brightness DIMMED_BRIGHTNESS]
+                [--max-ambient-brightness MAX_AMBIENT_BRIGHTNESS] [--device DEVICE]
+                [--subsystem SUBSYSTEM] [--yield-control | --no-yield-control]
+                [--change-to-get-control-back CHANGE_TO_GET_CONTROL_BACK]
+                [--controllable | --no-controllable] [--ramp | --no-ramp] [--ramp-step RAMP_STEP]
+                [--gamma GAMMA]
 
 options:
   -h, --help            show this help message and exit
   --max-brightness MAX_BRIGHTNESS
                         max selectable brightness in percent (default: 100.0)
   --min-brightness MIN_BRIGHTNESS
-                        min selectable brightness in percent (default: 5.0)
+                        min selectable brightness in percent (default: 1.0)
+  --dimmed-brightness DIMMED_BRIGHTNESS
+                        brightness when the screen is dimmed through command (default: 0.7)
   --max-ambient-brightness MAX_AMBIENT_BRIGHTNESS
-                        ambient brightness (in lumen) corresponding to the max
-                        (default: 500.0)
-  --device DEVICE       device to control (default intel_backlight)
+                        ambient brightness (in lumen) corresponding to the max (default: 500.0)
+  --device DEVICE       device to control (default: intel_backlight)
   --subsystem SUBSYSTEM
-                        subsystem to control (default backlight)
+                        subsystem to control (default: backlight)
+  --yield-control, --no-yield-control
+                        If this option is activated and the screen brightness is changed by another
+                        application, this daemon stops controlling it temporarily. (default: True)
   --change-to-get-control-back CHANGE_TO_GET_CONTROL_BACK
-                        how much the ambient brightness has to change to get control
-                        back (default 100.0 lumen). If the screen brightness is changed
-                        by another application, this daemon stops controlling it
-                        temporarily. but if the ambient brightness changes more than
-                        this amount, it takes control back. set to 0 to disable this
-                        behaviour
-  --ramp, --no-ramp     ramp brightness changes (default True) (default: True)
-  -v, --verbose         enable logging
+                        how much the ambient brightness has to change to get control back (default 100.0
+                        lumen). If `--yield-control` is activated and another program changes the screen
+                        brightness, the daemon stops controlling the screen brightness. But if the
+                        ambient brightness changes more than this amount, it takes control back. set to
+                        0 to disable this behaviour (default: 100.0)
+  --controllable, --no-controllable
+                        whether to respond to dbus commands (dim, undim, change_multiplier,
+                        set_multiplier) (default: True)
+  --ramp, --no-ramp     ramp brightness changes (default: True)
+  --ramp-step RAMP_STEP
+                        how much to change the brightness every 10 ms when ramping (in percent)
+                        (default: 0.2)
+  --gamma GAMMA         gamma for power scaling. 1 means proportional. Lower values mean that as the
+                        room gets brighter, the screen gets brighter faster. Raise if the backlight is
+                        too bright in the dark. (default: 2.0)
 ```
 
 #### Changing the brightness
