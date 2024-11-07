@@ -1,7 +1,7 @@
-
+# Maintainer: Tristan Brugère < tristan at bruge dot re >
 _pkgname=yabd
-pkgname=$_pkgname-git
-pkgver=0.2.0.22.26d5dcd
+pkgname="$_pkgname-git"
+pkgver=0.2.2
 pkgrel=1
 pkgdesc="Yet Another Brightness Daemon — set screen brightness from ambient light sensor"
 arch=("any")
