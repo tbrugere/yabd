@@ -28,16 +28,46 @@ jobs:
         with:
           name: dist
           path: dist
+  check-version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      is_latest_version: ${{ steps.new-version.outputs.is_latest_version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-tags: true
+          fetch-depth: 0
+          filter: tree:0
+      - name: Install poetry
+        uses: abatilo/actions-poetry@v2
+      - name: Check version
+        id: version
+        run: echo "version=$(poetry version -s)" >> $GITHUB_OUTPUT
+      - name: Look for previous tag for this version
+        id: new-version
+        run: |
+          if [ $(git tag -l "${{ steps.version.outputs.version }}") ]; then
+            echo "is_latest_version=false" >> $GITHUB_OUTPUT
+          else
+            echo "is_latest_version=true" >> $GITHUB_OUTPUT
+          fi
+      - name: list tags for debug
+        run: git tag -l
   publish:
     runs-on: ubuntu-latest
-    needs: build
+    needs: 
+      - build
+      - check-version
     permissions:
       id-token: write
     environment:
       name: pypi
       url: https://pypi.org/p/ot_markov_distances
+    if: ${{ needs.check-version.outputs.is_latest_version == 'true' }}
     # to only publish if there is a tag release
     # if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags')
+    # ^^^ did something else instead
     steps:
       - name: retrieve package
         uses: actions/download-artifact@v4
@@ -50,3 +80,19 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist
+  tag:
+    runs-on: ubuntu-latest
+    needs: check-version
+    permissions:
+      id-token: write
+    if: ${{ needs.check-version.outputs.is_latest_version == 'true' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create tag
+        run: git tag -a "${{ needs.check-version.outputs.version }}" -m "version ${{ needs.check-version.outputs.version }}"
+      - name: Push tag
+        uses: ad-m/github-push-action@master
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          branch: ${{ github.ref}}
+          tags: true
