@@ -1,0 +1,24 @@
+version = 1
+revision = 3
+requires-python = ">=3.10"
+
+[[package]]
+name = "sdbus"
+version = "0.12.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/8e/39/3d49f0d18dcba3344af756f31e4408e7de50b3df86fa3f3ea6f604402f16/sdbus-0.12.0.tar.gz", hash = "sha256:c3692d75704438a78adc1439350bc32f30d6b38ad344cfc94773db89c6ce4a89", size = 82387, upload-time = "2024-04-02T18:02:42.217Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/aa/d8/4d45b1993190a8ee0091276ec795192db29999867291a7718ca525589ed5/sdbus-0.12.0-cp37-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:d918c8ad14ef00e589d6752ac0f2b6540a20c625e85000c152376945fca14209", size = 536002, upload-time = "2024-03-23T11:50:11.333Z" },
+    { url = "https://files.pythonhosted.org/packages/df/ad/589e197e0541eddacb2e2da446807783852ba9217b310823eea614a46f7e/sdbus-0.12.0-cp37-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:d545e65637536a63898e2366b2a74617aa1a2215b1c16b23475f912e3407838c", size = 534930, upload-time = "2024-03-23T11:50:14.295Z" },
+]
+
+[[package]]
+name = "yabd"
+version = "0.2.2"
+source = { editable = "." }
+dependencies = [
+    { name = "sdbus" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "sdbus", specifier = ">=0.12.0,<0.13" }]

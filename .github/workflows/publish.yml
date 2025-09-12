@@ -11,18 +11,12 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - name: Install poetry
-        uses: abatilo/actions-poetry@v2
-      - name: Set up Python 3.10
-        uses: actions/setup-python@v3
-        with:
-          python-version: "3.10"
-          cache: 'poetry'
-      - name: install deps
-        run: poetry install
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+      - name: Set up Python
+        run: uv python install
       - name: Build package
-        run: poetry build
+        run: uv build
       - name: save package
         uses: actions/upload-artifact@v4
         with:
@@ -39,11 +33,11 @@ jobs:
           fetch-tags: true
           fetch-depth: 0
           filter: tree:0
-      - name: Install poetry
-        uses: abatilo/actions-poetry@v2
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
       - name: Check version
         id: version
-        run: echo "version=$(poetry version -s)" >> $GITHUB_OUTPUT
+        run: echo "version=$(uv version --short)" >> $GITHUB_OUTPUT
       - name: Look for previous tag for this version
         id: new-version
         run: |
@@ -85,9 +79,14 @@ jobs:
     needs: check-version
     permissions:
       id-token: write
+      contents: write
     if: ${{ needs.check-version.outputs.is_latest_version == 'true' }}
     steps:
       - uses: actions/checkout@v4
+      - name: setup git
+        run: |
+          git config --global user.name "${GITHUB_ACTOR}"
+          git config --global user.email "${GITHUB_ACTOR}@users.noreply.github.com"
       - name: Create tag
         run: git tag -a "${{ needs.check-version.outputs.version }}" -m "version ${{ needs.check-version.outputs.version }}"
       - name: Push tag
