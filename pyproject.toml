@@ -1,6 +1,6 @@
 [project]
 name = "yabd"
-version = "0.2.2"
+version = "0.3.0"
 description = "Yet Another Brightness Daemon"
 authors = [{ name = "Tristan Brugère", email = "67050900+tbrugere@users.noreply.github.com" }]
 requires-python = ">=3.10"
