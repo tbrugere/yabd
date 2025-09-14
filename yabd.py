@@ -31,6 +31,7 @@ class Login1(DbusInterfaceCommonAsync, interface_name="org.freedesktop.login1.Se
 
     @dbus_method_async("ssu", "")
     async def set_brightness(self, backlight: str, device: str, brightness: int) -> None:
+        del backlight, device, brightness
         raise NotImplementedError
 
 
@@ -87,18 +88,9 @@ class Yabd(DbusInterfaceCommonAsync, interface_name="re.bruge.yabd"):
         self.ramp_step_units = int(self.ramp_step * self.max_brightness / 100)
         self.start_ramp_signal = asyncio.Event()
 
-    async def loop(self):
+    async def main(self):
         info("starting up")
         session_bus = sdbus.sd_bus_open_user()
-        await self.sensor_proxy.claim_light()
-        async def brightness_changed_loop() -> Never:
-            async for _, properties, __ in self.sensor_proxy.properties_changed:
-                if "LightLevel" in properties:
-                    light_level_type, light_level = properties["LightLevel"]
-                    assert light_level_type == "d"
-                    await self.brightness_changed_handler(light_level)
-                else :
-                    info(f"got PropertiesChanged signal, but without LightLevel")
 
         # register our dbus service
         sdbus.set_default_bus(session_bus)
@@ -106,8 +98,29 @@ class Yabd(DbusInterfaceCommonAsync, interface_name="re.bruge.yabd"):
         self.export_to_dbus("/re/bruge/yabd", bus=session_bus)
 
         async with asyncio.TaskGroup() as tg:
-            tg.create_task(brightness_changed_loop())
+            tg.create_task(self.brightness_changed_loop())
             tg.create_task(self.ramp_routine())
+
+    async def brightness_changed_loop(self) -> Never:
+        await self.claim_light()
+        async for _, properties, __ in self.sensor_proxy.properties_changed:
+            if "LightLevel" in properties:
+                light_level_type, light_level = properties["LightLevel"]
+                assert light_level_type == "d"
+                await self.brightness_changed_handler(light_level)
+            else :
+                info("got PropertiesChanged signal, but without LightLevel")
+        raise RuntimeError("sensor proxy disappeared")
+
+    async def claim_light(self):
+        while True:
+            try:
+                await self.sensor_proxy.claim_light()
+                return
+            except sdbus.dbus_exceptions.DbusNoReplyError as e:
+                logging.error(f"failed to claim light: {e}. retrying in 5s")
+                await asyncio.sleep(10)
+
 
     async def set_brightness_percent(self, brightness_percent, ramp=False):
         info(f"setting brightness to {brightness_percent}%")
@@ -251,22 +264,22 @@ class Yabd(DbusInterfaceCommonAsync, interface_name="re.bruge.yabd"):
     def argument_parser(cls, parser=None):
         if parser is None:
             parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-        parser.add_argument("--max-brightness", type=float, help=f"max selectable brightness in percent", default=cls.max_selectable_brightness)
-        parser.add_argument("--min-brightness", type=float, help=f"min selectable brightness in percent", default=cls.min_selectable_brightness)
-        parser.add_argument("--dimmed-brightness", type=float, help=f"brightness when the screen is dimmed through command", default=cls.dimmed_brightness)
+        parser.add_argument("--max-brightness", type=float, help="max selectable brightness in percent", default=cls.max_selectable_brightness)
+        parser.add_argument("--min-brightness", type=float, help="min selectable brightness in percent", default=cls.min_selectable_brightness)
+        parser.add_argument("--dimmed-brightness", type=float, help="brightness when the screen is dimmed through command", default=cls.dimmed_brightness)
         parser.add_argument("--max-ambient-brightness", type=float, 
-                            help=f"ambient brightness (in lumen) corresponding to the max", default=cls.max_ambient_brightness)
-        parser.add_argument("--device", type=str, help=f"device to control", default=cls.device)
-        parser.add_argument("--subsystem", type=str, help=f"subsystem to control", default=cls.subsystem)
-        parser.add_argument("--yield-control", action=argparse.BooleanOptionalAction, help=f"If this option is activated and the screen brightness is changed by another application, this daemon stops controlling it temporarily.", default=cls.controllable)
+                            help="ambient brightness (in lumen) corresponding to the max", default=cls.max_ambient_brightness)
+        parser.add_argument("--device", type=str, help="device to control", default=cls.device)
+        parser.add_argument("--subsystem", type=str, help="subsystem to control", default=cls.subsystem)
+        parser.add_argument("--yield-control", action=argparse.BooleanOptionalAction, help="If this option is activated and the screen brightness is changed by another application, this daemon stops controlling it temporarily.", default=cls.controllable)
         parser.add_argument("--change-to-get-control-back", type=float, help=f"""how much the ambient brightness has to change to get control back (default {cls.ambient_brightness_change_to_get_control_back} lumen). 
     If `--yield-control` is activated and another program changes the screen brightness, the daemon stops controlling the screen brightness. 
     But if the ambient brightness changes more than this amount, it takes control back. set to 0 to disable this behaviour""", 
                             default=cls.ambient_brightness_change_to_get_control_back)
-        parser.add_argument("--controllable", action=argparse.BooleanOptionalAction, help=f"whether to respond to dbus commands (dim, undim, change_multiplier, set_multiplier)", default=cls.controllable)
-        parser.add_argument("--ramp", action=argparse.BooleanOptionalAction, help=f"ramp brightness changes", default=cls.ramp)
-        parser.add_argument("--ramp-step", type=float, help=f"how much to change the brightness every 10 ms when ramping (in percent)", default=cls.ramp_step)
-        parser.add_argument("--gamma", type=float, help=f"gamma for power scaling. 1 means proportional. Lower values mean that as the room gets brighter, the screen gets brighter faster. Raise if the backlight is too bright in the dark.", default=cls.gamma)
+        parser.add_argument("--controllable", action=argparse.BooleanOptionalAction, help="whether to respond to dbus commands (dim, undim, change_multiplier, set_multiplier)", default=cls.controllable)
+        parser.add_argument("--ramp", action=argparse.BooleanOptionalAction, help="ramp brightness changes", default=cls.ramp)
+        parser.add_argument("--ramp-step", type=float, help="how much to change the brightness every 10 ms when ramping (in percent)", default=cls.ramp_step)
+        parser.add_argument("--gamma", type=float, help="gamma for power scaling. 1 means proportional. Lower values mean that as the room gets brighter, the screen gets brighter faster. Raise if the backlight is too bright in the dark.", default=cls.gamma)
         return parser
 
     def read_args(self, args=None):
@@ -305,7 +318,7 @@ def argument_parser():
     set_multiplier_parser.add_argument("new_multiplier", type=float, help="set the brightness multiplier to this value (in percent)")
     return parser
 
-def run_command(command, args, *,  signature=""):
+def run_command(command, args):
     bus = sdbus.sd_bus_open_user()
     daemon_proxy = Yabd.new_proxy("re.bruge.yabd", "/re/bruge/yabd", bus=bus)
     if command == "dim":
@@ -330,7 +343,7 @@ def main():
     logging.basicConfig(level=args.loglevel)
     if args.command == "run":
         daemon = Yabd(read_args=True, args=args)
-        asyncio.run(daemon.loop())
+        asyncio.run(daemon.main())
     else:
         run_command(args.command, args)
     
